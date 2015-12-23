@@ -11,6 +11,7 @@ monkey.patch_all()
 
 #==========Self-defined lib===========
 import load_balance
+import bg_db
 #=====================================
 
 #==========for Develop================
@@ -20,10 +21,12 @@ logger = log.getLogger()
 
 B = load_balance.Back_end([
     
-            "https://127.0.0.1:8087",
+            # "https://127.0.0.1:8087",
             "http://127.0.0.1:8087"
 
         ], ['http', 'https'], logger)
+
+DB = bg_db.Connection_Status()
 
 #=====================================
 
@@ -46,15 +49,43 @@ class ProxyServer(StreamServer):
                     break
             
             if line1:
-                remote_path, forw, back = B.Get_Backend(line1.split()[1])  #define forward and backward Tunnel
-                # remote_path = ['127.0.0.1', '8087']
-                remote = create_connection(remote_path)
+                
+                try:
+                    # raise
+                    remote_path, host = parse_address(line1.split()[1])
+                    remote = create_connection(remote_path, timeout=2)
+                    
+                    if line1.split()[0] == 'CONNECT':
+                        while True:
+                            _d = client.recv(65536)
+                            if _d:
+                                break
+                            else:
+                                line1 += _d
+                        forw, back = B.https_wrapper,  B.https_wrapper
+                        client.sendall('HTTP/1.1 200 \r\n\r\n')
+
+                    else:
+                        forw, back = B.http_wrapper, B.http_wrapper
+                        remote.sendall(line1)
+
+                    DB.insDomain(host, True)
+
+                except:
+                    import traceback
+                    traceback.print_exc()
+                    remote_path, remote_type, forw, back = B.Get_Backend(line1.split()[1])  #define forward and backward Tunnel
+                    remote = create_connection(remote_path)
+                    remote.sendall(line1)
+                    DB.insDomain(host, True)
+
                 source_address = '%s:%s' % client.getpeername()[:2]
                 dest_address = '%s:%s' % remote.getpeername()[:2]
                 log("Starting port forwarder %s -> %s", source_address, dest_address)                 
                 gevent.spawn(forw, client, remote)
-                gevent.spawn(back, remote, client) 
-                remote.sendall(line1)
+                gevent.spawn(back, remote, client)
+                
+                
             
             else:
                 client.close()
@@ -75,26 +106,19 @@ class ProxyServer(StreamServer):
             log('Closing listener socket')
             StreamServer.close(self)
 
-
-# def forward(source, dest):
-#     source_address = '%s:%s' % source.getpeername()[:2]
-#     dest_address = '%s:%s' % dest.getpeername()[:2]
-#     Buff_size = 1024
-#     try:
-#         while True:
-#             data = source.recv(Buff_size)
-#             if not data:
-#                 break
-#             Buff_size = min(Buff_size*2, 65536) if len(data) >= Buff_size else Buff_size
-#             log('%s->%s: %r bytes', source_address, dest_address, len(data))
-#             dest.sendall(data)
-#     finally:
-#         source.close()
-#         dest.close()
-
+def parse_address(address):
+    try:
+        urls = urlparse.urlparse(address)
+        address = urls.netloc or urls.path
+        _addr = address.split(':')
+        hostname, port = len(_addr) == 2 and  _addr or (_addr[0],80)
+        port = int(port)
+    except ValueError:
+        sys.exit('Expected HOST:PORT: %r' % address)
+    return (gethostbyname(hostname), port), hostname
 
 def main():
-    server = ProxyServer(('0.0.0.0',8888))
+    server = ProxyServer(('0.0.0.0',6666))
     log('Starting proxy server %s:%s', *(server.address[:2]))
     gevent.signal(signal.SIGTERM, server.close)
     gevent.signal(signal.SIGINT, server.close)

@@ -34,7 +34,7 @@ class Back_end():
 		Back_ser = self.Get_hash(url, len(self.Back_ends))
 		remote = self.Back_ends[Back_ser][-2:]
 		wrapper = getattr(self, self.Back_ends[Back_ser][0]+'_wrapper')
-		return remote, partial(wrapper, auth = self.Back_ends[Back_ser][1]), wrapper
+		return remote, self.Back_ends[Back_ser][0] ,partial(wrapper, auth = self.Back_ends[Back_ser][1]), wrapper
 
 	def http_wrapper(self, src, dst, auth = None):
 		source_address = '%s:%s' % src.getpeername()[:2]
@@ -53,6 +53,10 @@ class Back_end():
 				Buff_size = min(Buff_size*2, 65536) if len(data) >= Buff_size else Buff_size
 				self.logger.info('%s->%s: %r bytes', source_address, dest_address, len(data))
 				dst.sendall(data)
+		except:
+			import traceback
+			# traceback.print_exc()
+			print 'HTTP %s->%s was closed'%(source_address, dest_address)
 		finally:
 			src.close()
 			dst.close()
@@ -74,7 +78,12 @@ class Back_end():
 				Buff_size = min(Buff_size*2, 65536) if len(data) >= Buff_size else Buff_size
 				self.logger.info('%s->%s: %r bytes', source_address, dest_address, len(data))
 				dst.sendall(data)
+		except:
+			import traceback
+			# traceback.print_exc()
+			print 'HTTPS %s->%s was closed'%(source_address, dest_address)
 		finally:
+			
 			src.close()
 			dst.close()
 
